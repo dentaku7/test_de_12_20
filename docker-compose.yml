@@ -1,0 +1,56 @@
+version: "3.1"
+
+services:
+  db:
+    image: postgres
+    restart: always
+    logging:
+      driver: none
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+
+  scheduler:
+    image: daskdev/dask
+    hostname: dask-scheduler
+    ports:
+      - "8786:8786"
+      - "8787:8787"
+    logging:
+      driver: none
+    command: [ "dask-scheduler" ]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: dask-worker
+    volumes:
+      - task_data:/task_data
+      - result_data:/result_data
+    environment:
+      - MEM_LIMIT=auto
+      - DASK_DISTRIBUTED__LOGGING__DISTRIBUTED="error"
+    command: [ "dask-worker", "tcp://scheduler:8786", "--memory-limit=${MEM_LIMIT:-auto}" ]
+
+  task_notebook:
+    depends_on:
+      - worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DASK_SCHEDULER_ADDRESS=tcp://scheduler:8786
+      - DB_HOST=db
+      - TASK_DATA_DIR=/task_data
+      - RESULT_DATA_DIR=/result_data
+    volumes:
+      - task_data:/task_data
+      - result_data:/result_data
+      - ./code:/code
+    ports:
+      - "8888:8888"
+    entrypoint: [ "jupyter", "notebook", "--allow-root", "--ip",  "0.0.0.0", "--notebook-dir", "/code/notebooks" ]
+
+volumes:
+  task_data:
+  result_data:
